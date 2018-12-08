@@ -1,5 +1,6 @@
 package nl.appsource.csv2influx;
 
+import java.awt.Choice;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -9,7 +10,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 import java.util.stream.BaseStream;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import javax.annotation.PostConstruct;
@@ -46,16 +49,14 @@ public class Csv2Influx implements CommandLineRunner {
     public void postConstruct() {
     }
     
-    public Map<String, Double> arrayToHashMap(final List<String> columns, final String[] row) {
-        final HashMap<String, Double> result = new HashMap<>();
-        IntStream.range(0, columns.size()).forEach((a) -> {
-            result.put(columns.get(a), Double.valueOf(row[a]));
-        });
-        return result;
+    public static <K, V> Map<K, V> toMap(final List<K> columns, final V[] row) {
+        return IntStream.range(0, columns.size()).collect(HashMap::new, (m, i) -> m.put(columns.get(i), row[i]), Map::putAll);
     }
     
     @Override
     public void run(String... args) throws Exception {
+        
+        log.info("Start");
         
         final List<String> columns = fromPath(path)
             .map(line -> line.split(","))
@@ -63,12 +64,12 @@ public class Csv2Influx implements CommandLineRunner {
             .blockFirst()
             ;
 
-        log.debug("Header: " + columns);
+        log.info("headers: " + columns);
         
-        AtomicInteger count = new AtomicInteger();
+        final AtomicInteger count = new AtomicInteger();
 
         Disposable interval = Flux.interval(Duration.ofSeconds(1)).subscribe((seconds) -> {
-            log.debug("count=" + count.getAndSet(0));
+            log.debug("Speed: " + count.getAndSet(0) + " inserts / sec");
         });
         
         final InfluxClient influxClient = new InfluxClient(url, username, password);
@@ -77,23 +78,23 @@ public class Csv2Influx implements CommandLineRunner {
         fromPath(path)
                 .skip(1)
                 .map(line -> line.split(","))
-//                .limitRequest(1000)
                 .doOnNext((l) -> {
                     count.incrementAndGet();
                 })
-//                .parallel(8)
-                .map((r) -> arrayToHashMap(columns, r))
+                .map((r) -> toMap(columns, r))
 //                .log()
 //                .subscribe(System.out::println)
                 .subscribe(influxClient)
                 .dispose();
         ;
         
+        Collectors.toMap(Choice::getName, Function.identity());
+        
         influxClient.close();
 
         interval.dispose();
 
-        log.debug("Done");
+        log.info("Done");
 
     }
 

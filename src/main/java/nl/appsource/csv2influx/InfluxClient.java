@@ -17,7 +17,7 @@ import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @RequiredArgsConstructor
-public class InfluxClient implements Consumer<Map<String, Double>> {
+public class InfluxClient implements Consumer<Map<String, String>> {
 
     final String url;
     final String username;
@@ -27,8 +27,8 @@ public class InfluxClient implements Consumer<Map<String, Double>> {
 
     InfluxDB influxDB;
     
-    int i = 0;
-
+    private static final String TIMESTAMP = "timestamp";
+    
     public void connect() {
         
         if (influxDB != null) {
@@ -44,8 +44,8 @@ public class InfluxClient implements Consumer<Map<String, Double>> {
         influxDB.enableBatch(BatchOptions.DEFAULTS.exceptionHandler((failedPoints, e) -> {
             log.error("", e);
         })
-            .actions(300)
-            .flushDuration((int) Duration.ofMillis(250).toMillis())
+            .actions(100)
+            .flushDuration((int) Duration.ofMillis(500).toMillis())
           );
         
         log.info("Influxdb.version " + influxDB.version());
@@ -54,15 +54,15 @@ public class InfluxClient implements Consumer<Map<String, Double>> {
     }
 
     @Override
-    public void accept(final Map<String, Double> row) {
-        
-//        log.debug("Wrting " + (i++) + " timestamp=" + row.get("timestamp").longValue());
+    public void accept(final Map<String, String> row) {
         
         final Builder builder = Point.measurement("historical2")
-                .time(row.get("timestamp").longValue(), TimeUnit.SECONDS);
+                .time(Long.valueOf(row.get(TIMESTAMP)), TimeUnit.SECONDS);
 
         row.forEach((k, v) -> {
-            builder.addField(k, v);
+            if (!TIMESTAMP.equals(k)) {
+                builder.addField(k, Double.valueOf(v));
+            }
         });
 
         final BatchPoints batchPoints = BatchPoints.database(dbName).build();
